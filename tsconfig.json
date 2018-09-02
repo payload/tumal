@@ -1,0 +1,16 @@
+{
+    "compilerOptions": {
+        "downlevelIteration": true,
+        "lib": [
+            "es2018"
+        ],
+        "target": "es2018",
+        "moduleResolution": "node",
+        "module": "commonjs",
+        "inlineSourceMap": true,
+        "outDir": "bin"
+    },
+    "include": [
+        "src/**/*.ts"
+    ]
+}
