@@ -199,10 +199,14 @@ class Target {
             const { stdout, stderr, finish } = await ioEffect.execStream(build_cmd, { cwd });
             stdout.on('data', line => this.last_line = line)
             stderr.on('data', line => this.last_line = chalk.yellow(line))
-            await finish;
+            const retcode = await finish;
+            if (retcode !== 0) {
+                throw new Error();
+            }
             await ioEffect.writeFile(this.stamp_file(), '');
-        } catch {
+        } catch (e) {
             console.error('ERROR', this.name);
+            throw e;
         }
     }
 }
