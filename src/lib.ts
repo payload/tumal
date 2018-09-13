@@ -66,27 +66,7 @@ export class Raise {
         const promises: Map<PackageName, Promise<void>> = new Map();
         const tasks = new ConcurrentTasksLogger();
 
-        const frameOne = (spinner) => ({ interval: 1, frames: [ spinner.frames[0] ]})
-        const frameOneWidth = (spinner) => spinner.frames[0].length
-        const singleFrame = (frame): Spinner => ({ interval: 1, frames: [ frame ] })
-        const mapFrames = (s, func): Spinner => ({ interval: s.interval, frames: s.frames.map(func) })
-        const baseSpinner = cliSpinners.circleHalves;
-        const makeFrame = (color: Chalk, str: string) => {
-            const width = frameOneWidth(baseSpinner);
-            const times = Math.max(str.length, Math.floor(width / str.length));
-            return singleFrame(color(str.repeat(times)));
-        }
-
-        type Spinner = { interval: number, frames: string[] };
-
-        const spinnersList: [TargetState, Spinner][] = [
-            [ TargetState.UNKNOWN, makeFrame(chalk.gray, '◎') ],
-            [ TargetState.WORKING, mapFrames(baseSpinner, f => chalk.cyan(f)) ],
-            [ TargetState.SUCCESS, makeFrame(chalk.greenBright, '◉') ],
-            [ TargetState.NOTTODO, makeFrame(chalk.green, '◉') ],
-            [ TargetState.FAILING, makeFrame(chalk.red, '◉') ],
-        ]
-        const spinners = new Map<TargetState, Spinner>(spinnersList);
+        const spinners = createSpinners();
 
         let time = 0;
         const frame = () => {
@@ -352,4 +332,29 @@ function isStringArray(array: unknown): array is string[] {
 
 async function tryOrNull<Ret>(func: () => Promise<Ret>): Promise<Ret | null> {
     return func().catch<null>(async () => null);
+}
+
+
+
+function createSpinners() {
+    const frameOneWidth = (spinner) => spinner.frames[0].length
+    const singleFrame = (frame): Spinner => ({ interval: 1, frames: [ frame ] })
+    const mapFrames = (s, func): Spinner => ({ interval: s.interval, frames: s.frames.map(func) })
+    const baseSpinner = cliSpinners.circleHalves;
+    const makeFrame = (color: Chalk, str: string) => {
+        const width = frameOneWidth(baseSpinner);
+        const times = Math.max(str.length, Math.floor(width / str.length));
+        return singleFrame(color(str.repeat(times)));
+    }
+
+    type Spinner = { interval: number, frames: string[] };
+
+    const spinnersList: [TargetState, Spinner][] = [
+        [ TargetState.UNKNOWN, makeFrame(chalk.gray, '◎') ],
+        [ TargetState.WORKING, mapFrames(baseSpinner, f => chalk.cyan(f)) ],
+        [ TargetState.SUCCESS, makeFrame(chalk.greenBright, '◉') ],
+        [ TargetState.NOTTODO, makeFrame(chalk.green, '◉') ],
+        [ TargetState.FAILING, makeFrame(chalk.red, '◉') ],
+    ]
+    return new Map<TargetState, Spinner>(spinnersList);
 }
