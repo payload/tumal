@@ -4,7 +4,7 @@ import * as toposort from 'toposort';
 import { IoEffect } from "./io";
 import * as logUpdate from "log-update";
 import * as cliSpinners from "cli-spinners";
-import chalk from "chalk";
+import chalk, { Chalk } from "chalk";
 
 let ioEffect: IoEffect;
 
@@ -68,23 +68,31 @@ export class Raise {
 
         const frameOne = (spinner) => ({ interval: 1, frames: [ spinner.frames[0] ]})
         const frameOneWidth = (spinner) => spinner.frames[0].length
-        const singleFrame = (frame) => ({ interval: 1, frames: [ frame ] })
-        const mapFrames = (s, func) => ({ interval: s.interval, frames: s.frames.map(func) })
-
+        const singleFrame = (frame): Spinner => ({ interval: 1, frames: [ frame ] })
+        const mapFrames = (s, func): Spinner => ({ interval: s.interval, frames: s.frames.map(func) })
         const baseSpinner = cliSpinners.circleHalves;
-
-        const spinners = {
-            '.': singleFrame(chalk.gray('◎'.repeat(frameOneWidth(baseSpinner)))),
-            '!': mapFrames(baseSpinner, f => chalk.cyan(f)),
-            '#': singleFrame(chalk.greenBright('◉'.repeat(frameOneWidth(baseSpinner)))),
-            '*': singleFrame(chalk.green('◉'.repeat(frameOneWidth(baseSpinner)))),
-            '?': singleFrame(chalk.red('◉'.repeat(frameOneWidth(baseSpinner)))),
+        const makeFrame = (color: Chalk, str: string) => {
+            const width = frameOneWidth(baseSpinner);
+            const times = Math.max(str.length, Math.floor(width / str.length));
+            return singleFrame(color(str.repeat(times)));
         }
+
+        type Spinner = { interval: number, frames: string[] };
+
+        const spinnersList: [TargetState, Spinner][] = [
+            [ TargetState.UNKNOWN, makeFrame(chalk.gray, '◎') ],
+            [ TargetState.WORKING, mapFrames(baseSpinner, f => chalk.cyan(f)) ],
+            [ TargetState.SUCCESS, makeFrame(chalk.greenBright, '◉') ],
+            [ TargetState.NOTTODO, makeFrame(chalk.green, '◉') ],
+            [ TargetState.FAILING, makeFrame(chalk.red, '◉') ],
+        ]
+        const spinners = new Map<TargetState, Spinner>(spinnersList);
+
         let time = 0;
         const frame = () => {
             time += 80;
             let lines = todo.map(t => {
-                const spinner = spinners[t.state];
+                const spinner = spinners.get(t.state);
                 const frameNum = Math.floor((time - t.start) / spinner.interval) % spinner.frames.length;
                 const frame = spinner.frames[frameNum];
                 return frame + ' ' + t.name;
@@ -97,7 +105,6 @@ export class Raise {
         const timer = setInterval(frame, 80);
 
         todo.forEach((target) => {
-            target.state = '.';
             promises.set(target.name, task(target, command));
         })
 
@@ -107,19 +114,17 @@ export class Raise {
             await Promise.all(deps_promises);
             if (await target.out_of_date(files, targetsMap)) {
                 //tasks.inc(target);
-                target.state = '!';
+                target.state = TargetState.WORKING;
                 target.start = time;
                 try {
                     await target.build(build_cmd);
-                    target.state = '#';
+                    target.state = TargetState.SUCCESS;
                 } catch {
-                    target.state = '?';
+                    target.state = TargetState.FAILING;
                 }
                 //tasks.dec(target);
             } else {
-                
-                target.state = '*';
-                //console.log(`NOTHING TO DO ${target.name}`);
+                target.state = TargetState.NOTTODO;
             }
         }
 
@@ -131,9 +136,11 @@ export class Raise {
     }
 }
 
+enum TargetState { UNKNOWN, WORKING, NOTTODO, SUCCESS, FAILING }
+
 class Target {
 
-    public state = ' ';
+    public state = TargetState.UNKNOWN;
     public start = 0;
     public last_line = '';
     consumers: string[] = [];
