@@ -25,6 +25,12 @@ export class GitSources implements SourceProvider {
     }
 }
 
+interface RaiseAnalysis {
+    targets: Map<string, Target>
+    order: Target[]
+    sources: string[]
+}
+
 export class Raise {
 
     constructor(
@@ -57,21 +63,25 @@ export class Raise {
         
     }
 
+    private async analyze(opts: Partial<RaiseExecOptions> = {}): Promise<RaiseAnalysis> {
+        const sources = await this.sourceProvider.sourcesFromCwd();
+        const targets = await this.relevantTargets();
+        const order = execution_order(targets);
+        return { targets, order, sources };
+    }
+
     async exec(command: string, opts: Partial<RaiseExecOptions> = {}): Promise<void> {
         ioEffect = this.ioEffect;
+        const analysis = await this.analyze(opts);
 
-        const files = await this.sourceProvider.sourcesFromCwd();
-        const targetsMap = await this.relevantTargets();
-        const todo = execution_order(targetsMap);
         const promises: Map<PackageName, Promise<void>> = new Map();
-        const tasks = new ConcurrentTasksLogger();
-
         const spinners = createSpinners();
 
         let time = 0;
         const frame = () => {
             time += 80;
-            let lines = todo.map(t => {
+
+            let lines = analysis.order.map(t => {
                 const spinner = spinners.get(t.state);
                 const frameNum = Math.floor((time - t.start) / spinner.interval) % spinner.frames.length;
                 const frame = spinner.frames[frameNum];
@@ -79,12 +89,12 @@ export class Raise {
             });
             const maxWidth = Math.max(...lines.map(l => l.length));
             lines = lines.map(l => l + ' '.repeat(maxWidth - l.length))
-            lines = lines.map((l, i) => l + ' ' + todo[i].last_line)
+            lines = lines.map((l, i) => l + ' ' + analysis.order[i].last_line)
             logUpdate('\n', ...lines.map(l => l + '\n'));
         }
         const timer = setInterval(frame, 80);
 
-        todo.forEach((target) => {
+        analysis.order.forEach((target) => {
             promises.set(target.name, task(target, command));
         })
 
@@ -92,7 +102,7 @@ export class Raise {
             const deps_promises = target.deps.map((name) => promises.get(name))
 
             await Promise.all(deps_promises);
-            if (await target.out_of_date(files, targetsMap)) {
+            if (await target.out_of_date(analysis)) {
                 //tasks.inc(target);
                 target.state = TargetState.WORKING;
                 target.start = time;
@@ -165,12 +175,12 @@ class Target {
         return await Promise.all(filterMapFor(targets_map, this.deps).map(t => t.mtime()));
     }
 
-    async out_of_date(files: string[], targets_map: Map<string, Target>): Promise<boolean> {
+    async out_of_date(analysis: RaiseAnalysis): Promise<boolean> {
         try {
             const stamps = await Promise.all([
                 this.mtime(),
-                this.srcsMtimes(files),
-                this.depsMTimes(targets_map),
+                this.srcsMtimes(analysis.sources),
+                this.depsMTimes(analysis.targets),
             ])
             const newestMs = Math.max(...stamps[1], ...stamps[2]);
             return newestMs > stamps[0];
