@@ -60,7 +60,7 @@ export class Raise {
 
     private async analyze(opts: Partial<RaiseExecOptions> = {}): Promise<RaiseAnalysis> {
         const sources = await this.sourceProvider.sourcesFromCwd();
-        const targets = await this.relevantTargets();
+        const targets = await this.relevantTargets(opts.toTarget);
         const order = execution_order(targets);
         return { targets, order, sources };
     }
