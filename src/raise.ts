@@ -27,11 +27,6 @@ class RaiseCli {
         await this.raise().exec(command);
     }
 
-    async status(argv: yargs.Arguments): Promise<void> {
-        await this.raise().status();
-        console.log('END');
-    }
-
     private raise() {
         const ioEffect = new RealIoEffect();
         const sourceProvider = new GitSources(ioEffect);

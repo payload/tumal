@@ -5,6 +5,9 @@ import { IoEffect } from "./io";
 import * as logUpdate from "log-update";
 import * as cliSpinners from "cli-spinners";
 import chalk, { Chalk } from "chalk";
+import * as restoreCursor from "restore-cursor";
+
+restoreCursor();
 
 let ioEffect: IoEffect;
 
@@ -54,15 +57,6 @@ export class Raise {
         return targets_working_map;
     }
 
-    async status() {
-        ioEffect = this.ioEffect;
-
-        const targetsMap = await this.relevantTargets();
-        const todo = execution_order(targetsMap);
-
-        
-    }
-
     private async analyze(opts: Partial<RaiseExecOptions> = {}): Promise<RaiseAnalysis> {
         const sources = await this.sourceProvider.sourcesFromCwd();
         const targets = await this.relevantTargets();
@@ -73,56 +67,122 @@ export class Raise {
     async exec(command: string, opts: Partial<RaiseExecOptions> = {}): Promise<void> {
         ioEffect = this.ioEffect;
         const analysis = await this.analyze(opts);
+        const task = new TaskExecWhenOutOfDate(command, analysis);
 
-        const promises: Map<PackageName, Promise<void>> = new Map();
-        const spinners = createSpinners();
+        const ui = new RaiseExecUi(analysis.order);
+        await ui.runWhile(async () =>
+            await this.execute(analysis, task));
+    }
 
-        let time = 0;
-        const frame = () => {
-            time += 80;
+    private execute(analysis: RaiseAnalysis, task: RaiseTask): Promise<void> {
+        return new Promise<void>(resolve => this._execute(analysis, task, resolve));
+    }
 
-            let lines = analysis.order.map(t => {
-                const spinner = spinners.get(t.state);
-                const frameNum = Math.floor((time - t.start) / spinner.interval) % spinner.frames.length;
-                const frame = spinner.frames[frameNum];
-                return frame + ' ' + t.name;
-            });
-            const maxWidth = Math.max(...lines.map(l => l.length));
-            lines = lines.map(l => l + ' '.repeat(maxWidth - l.length))
-            lines = lines.map((l, i) => l + ' ' + analysis.order[i].last_line)
-            logUpdate('\n', ...lines.map(l => l + '\n'));
-        }
-        const timer = setInterval(frame, 80);
+    private _execute(analysis: RaiseAnalysis, task: RaiseTask, callback: () => void): void {
+        const { order, targets } = analysis;
+        const graph = createExecGraph(analysis);
 
-        analysis.order.forEach((target) => {
-            promises.set(target.name, task(target, command));
-        })
-
-        async function task(target: Target, build_cmd: string): Promise<void> {
-            const deps_promises = target.deps.map((name) => promises.get(name))
-
-            await Promise.all(deps_promises);
-            if (await target.out_of_date(analysis)) {
-                //tasks.inc(target);
-                target.state = TargetState.WORKING;
-                target.start = time;
-                try {
-                    await target.build(build_cmd);
-                    target.state = TargetState.SUCCESS;
-                } catch {
-                    target.state = TargetState.FAILING;
-                }
-                //tasks.dec(target);
+        const removeDep = (c: string, d: string) => graph.get(c).deps = graph.get(c).deps.filter(b => d !== b);
+        const maybeRunTask = (c: string) => graph.get(c).deps.length === 0 && runTask(c);
+        const doWork = async (name: string) => {
+            const node = graph.get(name);
+            console.assert(node && node.deps.length == 0);
+            if (await task.run(name)) {
+                node.consumers.forEach(c => removeDep(c, name));
+                node.consumers.forEach(maybeRunTask);
             } else {
-                target.state = TargetState.NOTTODO;
+                // TODO what to do with remaining targets? mark them?
             }
         }
 
-        await Promise.all(Array.from(promises.values()))
+        let tasksRunning = 0;
+        const runTask = async (name: string) => {
+            ++tasksRunning;
+            await doWork(name);
+            --tasksRunning || callback();
+        }
 
+        const readySet = Array.from(graph.values()).filter(n => n.deps.length == 0).map(n => n.name);
+        for (const name of readySet) {
+            runTask(name);
+        }
+    }
+}
+
+interface RaiseTask {
+    run(name: string): Promise<boolean>;
+}
+
+class TaskExecWhenOutOfDate {
+    constructor(private command: string, private analysis: RaiseAnalysis) { }
+    async run(name: string): Promise<boolean> {
+        const target = this.analysis.targets.get(name);
+        if (await target.out_of_date(this.analysis)) {
+            target.state = TargetState.WORKING;
+            const success = await target.build(this.command);
+            target.state = success ? TargetState.SUCCESS : TargetState.FAILING;
+            return success;
+        } else {
+            target.state = TargetState.NOTTODO;
+            return true;
+        }
+    }
+}
+
+type ExecGraphNode = { name: string, deps: string[], consumers: string[] };
+type ExecGraph = Map<string, ExecGraphNode>;
+
+function createExecGraph(analysis: RaiseAnalysis): ExecGraph {
+    const known = analysis.order.map(t => t.name);
+    const entry = (t: Target): [string, ExecGraphNode] => [t.name, {
+        name: t.name,
+        deps: Array.from(t.deps.filter(d => known.includes(d))),
+        consumers: Array.from(t.consumers.filter(c => known.includes(c))),
+    }]
+    return new Map(analysis.order.map(entry));
+}
+
+class RaiseExecUi {
+    spinners = createSpinners()
+
+    constructor(private targets: Target[]) { }
+
+    public async runWhile<T>(func: () => Promise<T>) {
+        let time = 0;
+        const interval = 80;
+        const timer = setInterval(() => {
+            time += interval;
+            this.frame(time)
+        }, interval);
+        this.frame(time);
+        await func();
         clearInterval(timer);
+        this.frame(time);
+    }
 
-        frame();
+    private frame(time: number) {
+        const { targets } = this;
+
+        let lines = targets.map(t => {
+            const spinner = this.getSpinner(t);
+            const frame = this.getFrame(time, t, spinner);
+            return frame + ' ' + t.name;
+        });
+        const maxWidth = Math.max(...lines.map(l => l.length));
+        lines = lines.map(l => l + ' '.repeat(maxWidth - l.length))
+        lines = lines.map((l, i) => l + ' ' + targets[i].last_line)
+
+        logUpdate('\n', ...lines.map(l => l + '\n'));
+    }
+
+    private getSpinner(target: Target): Spinner {
+        return this.spinners.get(target.state);
+    }
+
+    private getFrame(time: number, t: Target, spinner: Spinner): string {
+        const { interval, frames } = spinner;
+        const frameNum = Math.floor((time - t.start) / interval) % frames.length;
+        return spinner.frames[frameNum];
     }
 }
 
@@ -190,21 +250,17 @@ class Target {
         }
     }
 
-    async build(build_cmd: string): Promise<void> {
+    async build(build_cmd: string): Promise<boolean> {
         const cwd = this.dir;
-        try {
-            const { stdout, stderr, finish } = await ioEffect.execStream(build_cmd, { cwd });
-            stdout.on('data', line => this.last_line = line)
-            stderr.on('data', line => this.last_line = chalk.yellow(line))
-            const retcode = await finish;
-            if (retcode !== 0) {
-                throw new Error();
-            }
-            await ioEffect.writeFile(this.stamp_file(), '');
-        } catch (e) {
-            console.error('ERROR', this.name);
-            throw e;
+        const { stdout, stderr, finish } = await ioEffect.execStream(build_cmd, { cwd });
+        stdout.on('data', line => this.last_line = line)
+        stderr.on('data', line => this.last_line = chalk.yellow(line))
+        const retcode = await finish;
+        if (retcode !== 0) {
+            return false;
         }
+        await ioEffect.writeFile(this.stamp_file(), '');
+        return true;
     }
 }
 
@@ -237,20 +293,6 @@ function fill_consumers(targetsMap: Map<string, Target>): void {
             }
         })
     })
-}
-
-class ConcurrentTasksLogger {
-    private tasks = 0;
-
-    inc(target: Target): void {
-        ++this.tasks;
-        console.log(' '.repeat(this.tasks) + this.tasks, 'START', target.name);
-    }
-
-    dec(target: Target): void {
-        --this.tasks;
-        console.log(' '.repeat(this.tasks) + this.tasks, 'END', target.name);
-    }
 }
 
 function filterMapFor<K, V>(map: Map<K, V>, list: K[]): V[] {
@@ -334,8 +376,6 @@ function get_workspaces(json: PackageJson): string[] {
     }
 }
 
-
-
 function isStringArray(array: unknown): array is string[] {
     return Array.isArray(array) && array.every(isString);
 }
@@ -344,11 +384,11 @@ async function tryOrNull<Ret>(func: () => Promise<Ret>): Promise<Ret | null> {
     return func().catch<null>(async () => null);
 }
 
-
+type Spinner = { interval: number, frames: string[] };
 
 function createSpinners() {
     const frameOneWidth = (spinner) => spinner.frames[0].length
-    const singleFrame = (frame): Spinner => ({ interval: 1, frames: [ frame ] })
+    const singleFrame = (frame): Spinner => ({ interval: 1, frames: [frame] })
     const mapFrames = (s, func): Spinner => ({ interval: s.interval, frames: s.frames.map(func) })
     const baseSpinner = cliSpinners.circleHalves;
     const makeFrame = (color: Chalk, str: string) => {
@@ -357,14 +397,12 @@ function createSpinners() {
         return singleFrame(color(str.repeat(times)));
     }
 
-    type Spinner = { interval: number, frames: string[] };
-
     const spinnersList: [TargetState, Spinner][] = [
-        [ TargetState.UNKNOWN, makeFrame(chalk.gray, '◎') ],
-        [ TargetState.WORKING, mapFrames(baseSpinner, f => chalk.cyan(f)) ],
-        [ TargetState.SUCCESS, makeFrame(chalk.greenBright, '◉') ],
-        [ TargetState.NOTTODO, makeFrame(chalk.green, '◉') ],
-        [ TargetState.FAILING, makeFrame(chalk.red, '◉') ],
+        [TargetState.UNKNOWN, makeFrame(chalk.gray, '◎')],
+        [TargetState.WORKING, mapFrames(baseSpinner, f => chalk.cyan(f))],
+        [TargetState.SUCCESS, makeFrame(chalk.greenBright, '◉')],
+        [TargetState.NOTTODO, makeFrame(chalk.green, '◉')],
+        [TargetState.FAILING, makeFrame(chalk.red, '◉')],
     ]
     return new Map<TargetState, Spinner>(spinnersList);
 }
