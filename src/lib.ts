@@ -120,12 +120,17 @@ class TaskExecWhenOutOfDate {
         if (await target.out_of_date(this.analysis)) {
             target.state = TargetState.WORKING;
             const success = await target.build(this.command);
+            if (success) await this.writeStampFile(target);
             target.state = success ? TargetState.SUCCESS : TargetState.FAILING;
             return success;
         } else {
             target.state = TargetState.NOTTODO;
             return true;
         }
+    }
+
+    private async writeStampFile(target: Target) {
+        await ioEffect.writeFile(target.stamp_file(), '');
     }
 }
 
@@ -259,7 +264,6 @@ class Target {
         if (retcode !== 0) {
             return false;
         }
-        await ioEffect.writeFile(this.stamp_file(), '');
         return true;
     }
 }
