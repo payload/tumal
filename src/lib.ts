@@ -113,33 +113,47 @@ interface RaiseTask {
     run(name: string): Promise<boolean>;
 }
 
+interface TaskFunc {
+    (ctx: TaskContext): Promise<boolean>
+}
+
+interface TaskContext extends RaiseAnalysis {
+    target: Target
+}
+
+async function runTaskWhenOutOfDate(ctx: TaskContext, func: TaskFunc): Promise<boolean> {
+    const { target } = ctx;
+    if (await target.out_of_date(ctx)) {
+        target.state = TargetState.WORKING;
+        const success = await func(ctx);
+        if (success) await writeStampFile(target);
+        target.state = success ? TargetState.SUCCESS : TargetState.FAILING;
+        return success;
+    } else {
+        target.state = TargetState.NOTTODO;
+        return true;
+    }
+}
+
+async function writeStampFile(target: Target) {
+    await ioEffect.writeFile(target.stamp_file(), '');
+}
+
+async function execCommand(command: string, target: Target) {
+    const cwd = target.dir;
+    const { stdout, stderr, finish } = await ioEffect.execStream(command, { cwd });
+    stdout.on('data', line => target.last_line = line)
+    stderr.on('data', line => target.last_line = chalk.yellow(line))
+    const retcode = await finish;
+    return retcode === 0;
+}
+
 class TaskExecWhenOutOfDate {
     constructor(private command: string, private analysis: RaiseAnalysis) { }
     async run(name: string): Promise<boolean> {
         const target = this.analysis.targets.get(name);
-        if (await target.out_of_date(this.analysis)) {
-            target.state = TargetState.WORKING;
-            const success = await this.execCommand(target);
-            if (success) await this.writeStampFile(target);
-            target.state = success ? TargetState.SUCCESS : TargetState.FAILING;
-            return success;
-        } else {
-            target.state = TargetState.NOTTODO;
-            return true;
-        }
-    }
-
-    private async execCommand(target: Target) {
-        const cwd = target.dir;
-        const { stdout, stderr, finish } = await ioEffect.execStream(this.command, { cwd });
-        stdout.on('data', line => target.last_line = line)
-        stderr.on('data', line => target.last_line = chalk.yellow(line))
-        const retcode = await finish;
-        return retcode === 0;
-    }
-
-    private async writeStampFile(target: Target) {
-        await ioEffect.writeFile(target.stamp_file(), '');
+        const ctx = { ...this.analysis, target };
+        return runTaskWhenOutOfDate(ctx, (ctx) => execCommand(this.command, ctx.target))
     }
 }
 
