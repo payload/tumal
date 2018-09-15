@@ -74,6 +74,17 @@ export class Raise {
             await this.execute(ctx));
     }
 
+    async yarn_run(script: string, args: string[], opts: Partial<RaiseExecOptions> = {}): Promise<void> {
+        ioEffect = this.ioEffect;
+        const analysis = await this.analyze(opts);
+        const command = ['yarn', 'run', script, ...args].join(' ');
+        const task = whenOutOfDate(whenPackageJsonScript(script, execCommand(command)));
+        const ctx = { ...analysis, task };
+        const ui = new RaiseExecUi(analysis.order);
+        await ui.runWhile(async () =>
+            await this.execute(ctx));
+    }
+
     private execute(ctx: ExecContext): Promise<void> {
         return new Promise<void>(resolve => this._execute(ctx, resolve));
     }
@@ -122,7 +133,22 @@ interface ExecContext extends RaiseAnalysis {
     task: TaskFunc,
 }
 
-function whenOutOfDate(then: TaskFunc) {
+function whenPackageJsonScript(script: string, then: TaskFunc): TaskFunc {
+    return (ctx) => _whenPackageJsonScript(script, ctx, then);
+}
+
+async function _whenPackageJsonScript(script: string, ctx: TaskContext, then: TaskFunc): Promise<boolean> {
+    const path = join(ctx.target.dir, 'package.json');
+    const data = await ioEffect.readFile(path);
+    const json = JSON.parse(data);
+    if (json.scripts[script]) {
+        return await then(ctx);
+    } else {
+        return true;
+    }
+}
+
+function whenOutOfDate(then: TaskFunc): TaskFunc {
     return (ctx) => runTaskWhenOutOfDate(ctx, then);
 }
 
@@ -140,15 +166,15 @@ async function runTaskWhenOutOfDate(ctx: TaskContext, func: TaskFunc): Promise<b
     }
 }
 
-async function writeStampFile(target: Target) {
+async function writeStampFile(target: Target): Promise<void> {
     await ioEffect.writeFile(target.stamp_file(), '');
 }
 
-function execCommand(command) {
+function execCommand(command: string): TaskFunc {
     return (ctx) => _execCommand(command, ctx)
 }
 
-async function _execCommand(command: string, ctx: TaskContext) {
+async function _execCommand(command: string, ctx: TaskContext): Promise<boolean> {
     const { target } = ctx;
     const cwd = target.dir;
     const { stdout, stderr, finish } = await ioEffect.execStream(command, { cwd });
@@ -184,9 +210,14 @@ class RaiseExecUi {
             this.frame(time)
         }, interval);
         this.frame(time);
-        await func();
-        clearInterval(timer);
-        this.frame(time);
+        try {
+            await func();
+            this.frame(time);
+        } catch {
+
+        } finally {
+            clearInterval(timer);
+        }
     }
 
     private frame(time: number) {
