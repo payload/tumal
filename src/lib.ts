@@ -119,7 +119,7 @@ class TaskExecWhenOutOfDate {
         const target = this.analysis.targets.get(name);
         if (await target.out_of_date(this.analysis)) {
             target.state = TargetState.WORKING;
-            const success = await target.build(this.command);
+            const success = await this.execCommand(target);
             if (success) await this.writeStampFile(target);
             target.state = success ? TargetState.SUCCESS : TargetState.FAILING;
             return success;
@@ -127,6 +127,15 @@ class TaskExecWhenOutOfDate {
             target.state = TargetState.NOTTODO;
             return true;
         }
+    }
+
+    private async execCommand(target: Target) {
+        const cwd = target.dir;
+        const { stdout, stderr, finish } = await ioEffect.execStream(this.command, { cwd });
+        stdout.on('data', line => target.last_line = line)
+        stderr.on('data', line => target.last_line = chalk.yellow(line))
+        const retcode = await finish;
+        return retcode === 0;
     }
 
     private async writeStampFile(target: Target) {
@@ -253,18 +262,6 @@ class Target {
             console.error(e);
             return true;
         }
-    }
-
-    async build(build_cmd: string): Promise<boolean> {
-        const cwd = this.dir;
-        const { stdout, stderr, finish } = await ioEffect.execStream(build_cmd, { cwd });
-        stdout.on('data', line => this.last_line = line)
-        stderr.on('data', line => this.last_line = chalk.yellow(line))
-        const retcode = await finish;
-        if (retcode !== 0) {
-            return false;
-        }
-        return true;
     }
 }
 
