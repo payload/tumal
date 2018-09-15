@@ -17,6 +17,10 @@ class RaiseCli {
     argv(): yargs.Arguments {
         return yargs
             .usage(`Usage: $0 <command> [options]`)
+            .option('f', {
+                alias: 'force',
+                desc: 'runs the command, even when the target is not out of date'
+            })
             .command('exec', 'run command for every package', yargs => yargs
                 .positional('command', {})
             )
@@ -29,13 +33,15 @@ class RaiseCli {
 
     async exec(argv: yargs.Arguments): Promise<void> {
         const command = argv._.slice(1).join(' ');
-        await this.raise().exec(command);
+        const force = !!argv.force;
+        await this.raise().exec(command, { force });
     }
 
     async 'yarn-run'(argv: yargs.Arguments): Promise<void> {
         const script = argv._[1];
         const args = argv._.slice(2);
-        await this.raise().yarn_run(script, args);
+        const force = !!argv.force;
+        await this.raise().yarn_run(script, args, { force });
     }
 
     private raise() {

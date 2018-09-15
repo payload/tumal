@@ -13,6 +13,7 @@ let ioEffect: IoEffect;
 
 export interface RaiseExecOptions {
     toTarget: string,
+    force: boolean,
 }
 
 export interface SourceProvider {
@@ -67,7 +68,8 @@ export class Raise {
     async exec(command: string, opts: Partial<RaiseExecOptions> = {}): Promise<void> {
         ioEffect = this.ioEffect;
         const analysis = await this.analyze(opts);
-        const task = whenOutOfDate(execCommand(command));
+        let task = setState(execCommand(command));
+        if (!opts.force) task = whenOutOfDate(task);
         const ctx = { ...analysis, task };
         const ui = new RaiseExecUi(analysis.order);
         await ui.runWhile(async () =>
@@ -78,7 +80,8 @@ export class Raise {
         ioEffect = this.ioEffect;
         const analysis = await this.analyze(opts);
         const command = ['yarn', 'run', script, ...args].join(' ');
-        const task = whenOutOfDate(whenPackageJsonScript(script, execCommand(command)));
+        let task = setState(whenPackageJsonScript(script, execCommand(command)));
+        if (!opts.force) task = whenOutOfDate(task);
         const ctx = { ...analysis, task };
         const ui = new RaiseExecUi(analysis.order);
         await ui.runWhile(async () =>
@@ -148,6 +151,14 @@ async function _whenPackageJsonScript(script: string, ctx: TaskContext, then: Ta
     }
 }
 
+function setState(func: TaskFunc): TaskFunc {
+    return async (ctx) => {
+        const success = await func(ctx);
+        ctx.target.state = success ? TargetState.SUCCESS : TargetState.FAILING;
+        return success;
+    }
+}
+
 function whenOutOfDate(then: TaskFunc): TaskFunc {
     return (ctx) => runTaskWhenOutOfDate(ctx, then);
 }
@@ -158,7 +169,6 @@ async function runTaskWhenOutOfDate(ctx: TaskContext, func: TaskFunc): Promise<b
         target.state = TargetState.WORKING;
         const success = await func(ctx);
         if (success) await writeStampFile(target);
-        target.state = success ? TargetState.SUCCESS : TargetState.FAILING;
         return success;
     } else {
         target.state = TargetState.NOTTODO;
@@ -212,11 +222,9 @@ class RaiseExecUi {
         this.frame(time);
         try {
             await func();
-            this.frame(time);
-        } catch {
-
         } finally {
             clearInterval(timer);
+            this.frame(time);
         }
     }
 
