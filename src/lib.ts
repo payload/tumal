@@ -67,27 +67,28 @@ export class Raise {
     async exec(command: string, opts: Partial<RaiseExecOptions> = {}): Promise<void> {
         ioEffect = this.ioEffect;
         const analysis = await this.analyze(opts);
-        const task = new TaskExecWhenOutOfDate(command, analysis);
-
+        const task = whenOutOfDate(execCommand(command));
+        const ctx = { ...analysis, task };
         const ui = new RaiseExecUi(analysis.order);
         await ui.runWhile(async () =>
-            await this.execute(analysis, task));
+            await this.execute(ctx));
     }
 
-    private execute(analysis: RaiseAnalysis, task: RaiseTask): Promise<void> {
-        return new Promise<void>(resolve => this._execute(analysis, task, resolve));
+    private execute(ctx: ExecContext): Promise<void> {
+        return new Promise<void>(resolve => this._execute(ctx, resolve));
     }
 
-    private _execute(analysis: RaiseAnalysis, task: RaiseTask, callback: () => void): void {
-        const { order, targets } = analysis;
-        const graph = createExecGraph(analysis);
+    private _execute(ctx: ExecContext, callback: () => void): void {
+        const { task, order, targets } = ctx;
+        const graph = createExecGraph(ctx);
 
         const removeDep = (c: string, d: string) => graph.get(c).deps = graph.get(c).deps.filter(b => d !== b);
         const maybeRunTask = (c: string) => graph.get(c).deps.length === 0 && runTask(c);
         const doWork = async (name: string) => {
             const node = graph.get(name);
             console.assert(node && node.deps.length == 0);
-            if (await task.run(name)) {
+            const target = targets.get(name);
+            if (await task({ ...ctx, target })) {
                 node.consumers.forEach(c => removeDep(c, name));
                 node.consumers.forEach(maybeRunTask);
             } else {
@@ -109,16 +110,20 @@ export class Raise {
     }
 }
 
-interface RaiseTask {
-    run(name: string): Promise<boolean>;
-}
-
 interface TaskFunc {
     (ctx: TaskContext): Promise<boolean>
 }
 
-interface TaskContext extends RaiseAnalysis {
+interface TaskContext extends ExecContext {
     target: Target
+}
+
+interface ExecContext extends RaiseAnalysis {
+    task: TaskFunc,
+}
+
+function whenOutOfDate(then: TaskFunc) {
+    return (ctx) => runTaskWhenOutOfDate(ctx, then);
 }
 
 async function runTaskWhenOutOfDate(ctx: TaskContext, func: TaskFunc): Promise<boolean> {
@@ -139,22 +144,18 @@ async function writeStampFile(target: Target) {
     await ioEffect.writeFile(target.stamp_file(), '');
 }
 
-async function execCommand(command: string, target: Target) {
+function execCommand(command) {
+    return (ctx) => _execCommand(command, ctx)
+}
+
+async function _execCommand(command: string, ctx: TaskContext) {
+    const { target } = ctx;
     const cwd = target.dir;
     const { stdout, stderr, finish } = await ioEffect.execStream(command, { cwd });
     stdout.on('data', line => target.last_line = line)
     stderr.on('data', line => target.last_line = chalk.yellow(line))
     const retcode = await finish;
     return retcode === 0;
-}
-
-class TaskExecWhenOutOfDate {
-    constructor(private command: string, private analysis: RaiseAnalysis) { }
-    async run(name: string): Promise<boolean> {
-        const target = this.analysis.targets.get(name);
-        const ctx = { ...this.analysis, target };
-        return runTaskWhenOutOfDate(ctx, (ctx) => execCommand(this.command, ctx.target))
-    }
 }
 
 type ExecGraphNode = { name: string, deps: string[], consumers: string[] };
