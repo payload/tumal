@@ -16,12 +16,6 @@
     esutils "^2.0.2"
     js-tokens "^4.0.0"
 
-"@types/byline@^4.2.31":
-  version "4.2.31"
-  resolved "https://registry.yarnpkg.com/@types/byline/-/byline-4.2.31.tgz#0e61fcb9c03e047d21c4496554c7116297ab60cd"
-  dependencies:
-    "@types/node" "*"
-
 "@types/chalk@^2.2.0":
   version "2.2.0"
   resolved "https://registry.yarnpkg.com/@types/chalk/-/chalk-2.2.0.tgz#b7f6e446f4511029ee8e3f43075fb5b73fbaa0ba"
@@ -57,6 +51,21 @@
 "@types/node@*", "@types/node@^10.9.4":
   version "10.9.4"
   resolved "https://registry.yarnpkg.com/@types/node/-/node-10.9.4.tgz#0f4cb2dc7c1de6096055357f70179043c33e9897"
+
+"@types/split@^1.0.0":
+  version "1.0.0"
+  resolved "https://artifactory.prodwest.citrixsaassbe.net/artifactory/api/npm/public-npm/@types/split/-/split-1.0.0.tgz#24f7c35707450b002f203383228f5a2bc1e6c228"
+  integrity sha1-JPfDVwdFCwAvIDODIo9aK8Hmwig=
+  dependencies:
+    "@types/node" "*"
+    "@types/through" "*"
+
+"@types/through@*":
+  version "0.0.29"
+  resolved "https://artifactory.prodwest.citrixsaassbe.net/artifactory/api/npm/public-npm/@types/through/-/through-0.0.29.tgz#72943aac922e179339c651fa34a4428a4d722f93"
+  integrity sha1-cpQ6rJIuF5M5xlH6NKRCik1yL5M=
+  dependencies:
+    "@types/node" "*"
 
 "@types/yargs@^11.1.1":
   version "11.1.1"
@@ -439,10 +448,6 @@ buffer-from@^1.0.0:
 builtin-modules@^1.0.0:
   version "1.1.1"
   resolved "https://registry.yarnpkg.com/builtin-modules/-/builtin-modules-1.1.1.tgz#270f076c5a72c02f5b65a47df94c5fe3a278892f"
-
-byline@^5.0.0:
-  version "5.0.0"
-  resolved "https://registry.yarnpkg.com/byline/-/byline-5.0.0.tgz#741c5216468eadc457b03410118ad77de8c1ddb1"
 
 cache-base@^1.0.1:
   version "1.0.1"
@@ -2896,6 +2901,13 @@ split-string@^3.0.1, split-string@^3.0.2:
   dependencies:
     extend-shallow "^3.0.0"
 
+split@^1.0.1:
+  version "1.0.1"
+  resolved "https://artifactory.prodwest.citrixsaassbe.net/artifactory/api/npm/public-npm/split/-/split-1.0.1.tgz#605bd9be303aa59fb35f9229fbea0ddec9ea07d9"
+  integrity sha1-YFvZvjA6pZ+zX5Ip++oN3snqB9k=
+  dependencies:
+    through "2"
+
 sprintf-js@~1.0.2:
   version "1.0.3"
   resolved "https://registry.yarnpkg.com/sprintf-js/-/sprintf-js-1.0.3.tgz#04e6926f662895354f3dd015203633b857297e2c"
@@ -3033,6 +3045,11 @@ test-exclude@^4.2.1:
 throat@^4.0.0:
   version "4.1.0"
   resolved "https://registry.yarnpkg.com/throat/-/throat-4.1.0.tgz#89037cbc92c56ab18926e6ba4cbb200e15672a6a"
+
+through@2:
+  version "2.3.8"
+  resolved "https://artifactory.prodwest.citrixsaassbe.net/artifactory/api/npm/public-npm/through/-/through-2.3.8.tgz#0dd4c9ffaabc357960b1b724115d7e0e86a2e1f5"
+  integrity sha1-DdTJ/6q8NXlgsbckEV1+Doai4fU=
 
 tmpl@1.0.x:
   version "1.0.4"
