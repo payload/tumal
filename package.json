@@ -1,7 +1,7 @@
 {
-  "name": "raise",
+  "name": "tumal",
   "version": "1.0.0",
-  "main": "bin/raise.js",
+  "main": "bin/tumal.js",
   "license": "MIT",
   "scripts": {
     "build": "tsc"

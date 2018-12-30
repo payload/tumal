@@ -8,7 +8,7 @@
         "moduleResolution": "node",
         "module": "commonjs",
         "inlineSourceMap": true,
-        "outDir": "bin"
+        "outDir": "bin",
     },
     "include": [
         "src/**/*.ts"
