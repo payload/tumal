@@ -1,31 +1,35 @@
 {
   "name": "tumal",
   "version": "1.0.0",
-  "main": "bin/tumal.js",
+  "bin": {
+    "tumal": "./bin/tumal.js"
+  },
   "license": "MIT",
   "scripts": {
-    "build": "tsc"
+    "build": "rimraf bin && tsc",
+    "prepublish": "npm run build"
   },
+  "files": [
+    "bin"
+  ],
   "devDependencies": {
     "@types/chalk": "^2.2.0",
     "@types/glob": "^5.0.35",
-    "@types/jest": "^23.3.2",
+    "@types/log-update": "^2.0.0",
     "@types/node": "^10.9.4",
     "@types/split": "^1.0.0",
     "@types/yargs": "^11.1.1",
-    "jest": "^23.5.0",
-    "ts-jest": "^23.1.4",
+    "rimraf": "^2.6.3",
     "typescript": "^3.0.3"
   },
   "dependencies": {
-    "@types/log-update": "^2.0.0",
-    "chalk": "^2.4.1",
-    "cli-spinners": "^1.3.1",
-    "glob": "^7.1.3",
-    "log-update": "^2.3.0",
-    "restore-cursor": "^2.0.0",
-    "split": "^1.0.1",
-    "toposort": "^2.0.2",
-    "yargs": "^12.0.1"
+    "chalk": "2.4.1",
+    "cli-spinners": "1.3.1",
+    "glob": "7.1.3",
+    "log-update": "2.3.0",
+    "restore-cursor": "2.0.0",
+    "split": "1.0.1",
+    "toposort": "2.0.2",
+    "yargs": "12.0.1"
   }
 }
